@@ -2,10 +2,11 @@ mod rules;
 
 use anyhow::{Context, Result, anyhow, bail};
 use argh::FromArgs;
+use dotenvy::dotenv;
 use futures_util::{SinkExt, StreamExt};
-use http::Request;
 use riichienv_core::observation::Observation;
 use riichilab_agent_protocol::IncomingMessage;
+use rustls::crypto::ring::default_provider;
 use serde::Serialize;
 use serde_json::Value;
 use std::fs::{self, File};
@@ -13,6 +14,7 @@ use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
 const VALIDATE_ENDPOINT: &str = "wss://game.riichi.dev/ws/validate";
@@ -61,6 +63,10 @@ impl QueueKind {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    default_provider()
+        .install_default()
+        .map_err(|_| anyhow!("failed to install rustls crypto provider"))?;
+    let _ = dotenv();
     let args: Args = argh::from_env();
 
     match args.command {
@@ -74,7 +80,16 @@ async fn run(command: ConnectCommand, queue: QueueKind) -> Result<()> {
     let url = command.url.unwrap_or_else(|| queue.default_url().to_owned());
     let mut logger = GameLogger::new(command.log_dir.unwrap_or_else(|| PathBuf::from("logs")));
 
-    let request = Request::builder().uri(&url).header("Authorization", format!("Bearer {token}")).body(()).context("failed to build websocket request")?;
+    let mut request = url
+        .clone()
+        .into_client_request()
+        .context("failed to build websocket request")?;
+    request.headers_mut().insert(
+        "Authorization",
+        format!("Bearer {token}")
+            .parse()
+            .context("failed to encode authorization header")?,
+    );
 
     let (mut socket, _) = connect_async(request).await.with_context(|| format!("failed to connect to {url}"))?;
 
