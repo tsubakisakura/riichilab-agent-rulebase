@@ -14,6 +14,22 @@
 * riichilab-agent-rulebase-cli (CLIで起動するagent)
 * riichilab-agent-protocol (DTO)
 
+# セットアップ
+
+トークンはCLI引数ではなく、Git管理外の `.env` で渡す想定です。
+
+~~~
+cp .env.example .env
+~~~
+
+`.env` に発行したトークンを書き込みます。
+
+~~~
+RIICHILAB_BOT_TOKEN=replace-with-your-bot-token
+~~~
+
+CLIは起動時に自動で `.env` を読み込みます。
+
 # コマンド
 
 ~~~
@@ -22,6 +38,12 @@ cargo run validate
 
 # ランク戦へ接続
 cargo run ranked
+~~~
+
+必要ならログ出力先を上書きできます。
+
+~~~
+cargo run validate -- --log-dir out/logs
 ~~~
 
 # AIのルール
@@ -47,3 +69,4 @@ jsonlフォーマットになります。
 ~~~
 
 ログは半荘ごとに記録されます。つまり、start_gameからend_gameまでを1ファイルとして扱います。
+デフォルトの出力先は `logs/` です。
