@@ -13,6 +13,8 @@ use serde_json::Value;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
+use std::time::Duration;
+use tokio::time::{MissedTickBehavior, interval};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -143,41 +145,53 @@ async fn run_single_game(token: &str, url: &str, queue: QueueKind, logger: &mut 
     request.headers_mut().insert("Authorization", format!("Bearer {token}").parse().context("failed to encode authorization header")?);
 
     let (mut socket, _) = connect_async(request).await.with_context(|| format!("failed to connect to {url}"))?;
+    let mut heartbeat = interval(Duration::from_secs(5));
+    heartbeat.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    heartbeat.tick().await;
 
-    while let Some(frame) = socket.next().await {
-        match frame.context("failed to receive websocket frame")? {
-            Message::Text(text) => {
-                let raw_value: Value = serde_json::from_str(&text).with_context(|| format!("invalid json frame: {text}"))?;
-                let message: IncomingMessage = serde_json::from_str(&text).with_context(|| format!("invalid transport message: {text}"))?;
-                eprintln!("in  {text}");
-                logger.log_incoming(&message, raw_value)?;
-
-                if let Some(outbound) = handle_message(&message)? {
-                    eprintln!("out {outbound}");
-                    logger.log_outgoing(&message, &outbound)?;
-                    socket.send(Message::Text(outbound.into())).await.context("failed to send action")?;
-                }
-
-                if let Some(outcome) = session_outcome(queue, &message) {
+    loop {
+        tokio::select! {
+            _ = heartbeat.tick() => {
+                eprintln!("waiting for {} queue activity...", queue.label());
+            }
+            maybe_frame = socket.next() => {
+                let Some(frame_result) = maybe_frame else {
                     logger.close()?;
-                    return Ok(outcome);
+                    bail!("websocket stream ended before session completion");
+                };
+
+                match frame_result.context("failed to receive websocket frame")? {
+                    Message::Text(text) => {
+                        let raw_value: Value = serde_json::from_str(&text).with_context(|| format!("invalid json frame: {text}"))?;
+                        let message: IncomingMessage = serde_json::from_str(&text).with_context(|| format!("invalid transport message: {text}"))?;
+                        eprintln!("in  {text}");
+                        logger.log_incoming(&message, raw_value)?;
+
+                        if let Some(outbound) = handle_message(&message)? {
+                            eprintln!("out {outbound}");
+                            logger.log_outgoing(&message, &outbound)?;
+                            socket.send(Message::Text(outbound.into())).await.context("failed to send action")?;
+                        }
+
+                        if let Some(outcome) = session_outcome(queue, &message) {
+                            logger.close()?;
+                            return Ok(outcome);
+                        }
+                    }
+                    Message::Close(_) => {
+                        logger.close()?;
+                        bail!("websocket closed before session completion");
+                    }
+                    Message::Binary(_) => {}
+                    Message::Ping(payload) => {
+                        socket.send(Message::Pong(payload)).await.context("failed to respond to ping")?;
+                    }
+                    Message::Pong(_) => {}
+                    Message::Frame(_) => {}
                 }
             }
-            Message::Close(_) => {
-                logger.close()?;
-                bail!("websocket closed before session completion");
-            }
-            Message::Binary(_) => {}
-            Message::Ping(payload) => {
-                socket.send(Message::Pong(payload)).await.context("failed to respond to ping")?;
-            }
-            Message::Pong(_) => {}
-            Message::Frame(_) => {}
         }
     }
-
-    logger.close()?;
-    bail!("websocket stream ended before session completion")
 }
 
 fn session_outcome(queue: QueueKind, message: &IncomingMessage) -> Option<SessionOutcome> {
