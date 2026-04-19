@@ -133,14 +133,14 @@ async fn run(command: ConnectCommand, queue: QueueKind) -> Result<()> {
     let games = command.games;
 
     for game_index in 0..games {
-        let outcome = run_single_game(&token, &url, queue, &mut logger).await?;
+        let outcome = run_single_game(&token, &url, queue, &mut logger, game_index, games).await?;
         eprintln!("completed session {}/{} ({})", game_index + 1, games, outcome.label());
     }
 
     Ok(())
 }
 
-async fn run_single_game(token: &str, url: &str, queue: QueueKind, logger: &mut GameLogger) -> Result<SessionOutcome> {
+async fn run_single_game(token: &str, url: &str, queue: QueueKind, logger: &mut GameLogger, game_index: u32, games: u32) -> Result<SessionOutcome> {
     let mut request = url.to_owned().into_client_request().context("failed to build websocket request")?;
     request.headers_mut().insert("Authorization", format!("Bearer {token}").parse().context("failed to encode authorization header")?);
 
@@ -152,7 +152,14 @@ async fn run_single_game(token: &str, url: &str, queue: QueueKind, logger: &mut 
     loop {
         tokio::select! {
             _ = heartbeat.tick() => {
-                eprintln!("waiting for {} queue activity...", queue.label());
+                eprintln!(
+                    "waiting for {} queue activity... ({}/{} completed, session {}/{})",
+                    queue.label(),
+                    game_index,
+                    games,
+                    game_index + 1,
+                    games
+                );
             }
             maybe_frame = socket.next() => {
                 let Some(frame_result) = maybe_frame else {
