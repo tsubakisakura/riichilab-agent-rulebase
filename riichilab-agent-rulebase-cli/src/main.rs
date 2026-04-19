@@ -31,13 +31,13 @@ struct Args {
 #[derive(FromArgs)]
 #[argh(subcommand)]
 enum Command {
-    Validate(ConnectCommand),
-    Ranked(ConnectCommand),
+    Validate(ValidateCommand),
+    Ranked(RankedCommand),
 }
 
 #[derive(FromArgs)]
 #[argh(subcommand, name = "validate", description = "connect to the validation queue")]
-struct ConnectCommand {
+struct ValidateCommand {
     #[argh(option, description = "bot token; falls back to RIICHILAB_BOT_TOKEN")]
     token: Option<String>,
     #[argh(option, description = "override the websocket endpoint")]
@@ -46,6 +46,48 @@ struct ConnectCommand {
     log_dir: Option<PathBuf>,
     #[argh(option, default = "1", description = "number of sessions to run")]
     games: u32,
+}
+
+#[derive(FromArgs)]
+#[argh(subcommand, name = "ranked", description = "connect to the ranked queue")]
+struct RankedCommand {
+    #[argh(option, description = "bot token; falls back to RIICHILAB_BOT_TOKEN")]
+    token: Option<String>,
+    #[argh(option, description = "override the websocket endpoint")]
+    url: Option<String>,
+    #[argh(option, description = "directory for per-game jsonl logs")]
+    log_dir: Option<PathBuf>,
+    #[argh(option, default = "1", description = "number of sessions to run")]
+    games: u32,
+}
+
+struct ConnectCommand {
+    token: Option<String>,
+    url: Option<String>,
+    log_dir: Option<PathBuf>,
+    games: u32,
+}
+
+impl From<ValidateCommand> for ConnectCommand {
+    fn from(command: ValidateCommand) -> Self {
+        Self {
+            token: command.token,
+            url: command.url,
+            log_dir: command.log_dir,
+            games: command.games,
+        }
+    }
+}
+
+impl From<RankedCommand> for ConnectCommand {
+    fn from(command: RankedCommand) -> Self {
+        Self {
+            token: command.token,
+            url: command.url,
+            log_dir: command.log_dir,
+            games: command.games,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -77,8 +119,8 @@ async fn main() -> Result<()> {
     let args: Args = argh::from_env();
 
     match args.command {
-        Command::Validate(command) => run(command, QueueKind::Validate).await,
-        Command::Ranked(command) => run(command, QueueKind::Ranked).await,
+        Command::Validate(command) => run(command.into(), QueueKind::Validate).await,
+        Command::Ranked(command) => run(command.into(), QueueKind::Ranked).await,
     }
 }
 
