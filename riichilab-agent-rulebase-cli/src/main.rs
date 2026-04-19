@@ -148,18 +148,21 @@ async fn run_single_game(token: &str, url: &str, queue: QueueKind, logger: &mut 
     let mut heartbeat = interval(Duration::from_secs(5));
     heartbeat.set_missed_tick_behavior(MissedTickBehavior::Skip);
     heartbeat.tick().await;
+    let mut game_active = false;
 
     loop {
         tokio::select! {
             _ = heartbeat.tick() => {
-                eprintln!(
-                    "waiting for {} queue activity... ({}/{} completed, session {}/{})",
-                    queue.label(),
-                    game_index,
-                    games,
-                    game_index + 1,
-                    games
-                );
+                if !game_active {
+                    eprintln!(
+                        "waiting for {} queue activity... ({}/{} completed, session {}/{})",
+                        queue.label(),
+                        game_index,
+                        games,
+                        game_index + 1,
+                        games
+                    );
+                }
             }
             maybe_frame = socket.next() => {
                 let Some(frame_result) = maybe_frame else {
@@ -171,6 +174,12 @@ async fn run_single_game(token: &str, url: &str, queue: QueueKind, logger: &mut 
                     Message::Text(text) => {
                         let raw_value: Value = serde_json::from_str(&text).with_context(|| format!("invalid json frame: {text}"))?;
                         let message: IncomingMessage = serde_json::from_str(&text).with_context(|| format!("invalid transport message: {text}"))?;
+                        if message.is_start_game() {
+                            game_active = true;
+                        }
+                        if message.is_end_game() {
+                            game_active = false;
+                        }
                         eprintln!("in  {text}");
                         logger.log_incoming(&message, raw_value)?;
 
