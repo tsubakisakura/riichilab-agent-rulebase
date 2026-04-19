@@ -73,3 +73,4 @@ jsonlフォーマットになります。
 
 ログは半荘ごとに記録されます。つまり、start_gameからend_gameまでを1ファイルとして扱います。
 デフォルトの出力先は `logs/` です。
+ファイル名は `ranked-yyyymmdd-hhmmss.jsonl` または `validate-yyyymmdd-hhmmss.jsonl` の形式です。

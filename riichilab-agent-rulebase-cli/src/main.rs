@@ -2,6 +2,7 @@ mod rules;
 
 use anyhow::{Context, Result, anyhow, bail};
 use argh::FromArgs;
+use chrono::Utc;
 use dotenvy::dotenv;
 use futures_util::{SinkExt, StreamExt};
 use riichienv_core::observation::Observation;
@@ -12,7 +13,6 @@ use serde_json::Value;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -61,6 +61,13 @@ impl QueueKind {
             Self::Ranked => RANKED_ENDPOINT,
         }
     }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Validate => "validate",
+            Self::Ranked => "ranked",
+        }
+    }
 }
 
 #[tokio::main]
@@ -78,7 +85,7 @@ async fn main() -> Result<()> {
 async fn run(command: ConnectCommand, queue: QueueKind) -> Result<()> {
     let token = load_token(command.token)?;
     let url = command.url.unwrap_or_else(|| queue.default_url().to_owned());
-    let mut logger = GameLogger::new(command.log_dir.unwrap_or_else(|| PathBuf::from("logs")));
+    let mut logger = GameLogger::new(command.log_dir.unwrap_or_else(|| PathBuf::from("logs")), queue);
     let games = command.games;
 
     for game_index in 0..games {
@@ -173,8 +180,8 @@ fn load_token(token_arg: Option<String>) -> Result<String> {
 
 struct GameLogger {
     log_dir: PathBuf,
+    queue: QueueKind,
     current: Option<BufWriter<File>>,
-    game_index: u64,
 }
 
 enum SessionOutcome {
@@ -192,8 +199,8 @@ impl SessionOutcome {
 }
 
 impl GameLogger {
-    fn new(log_dir: PathBuf) -> Self {
-        Self { log_dir, current: None, game_index: 0 }
+    fn new(log_dir: PathBuf, queue: QueueKind) -> Self {
+        Self { log_dir, queue, current: None }
     }
 
     fn log_incoming(&mut self, message: &IncomingMessage, raw_value: Value) -> Result<()> {
@@ -232,16 +239,15 @@ impl GameLogger {
 
         fs::create_dir_all(&self.log_dir).with_context(|| format!("failed to create log directory {}", self.log_dir.display()))?;
 
-        self.game_index += 1;
-        let path = self.next_log_path()?;
+        let path = self.next_log_path();
         let file = File::create(&path).with_context(|| format!("failed to create log file {}", path.display()))?;
         self.current = Some(BufWriter::new(file));
         Ok(())
     }
 
-    fn next_log_path(&self) -> Result<PathBuf> {
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).context("system time is before unix epoch")?.as_secs();
-        Ok(self.log_dir.join(format!("game-{timestamp}-{:04}.jsonl", self.game_index)))
+    fn next_log_path(&self) -> PathBuf {
+        let timestamp = Utc::now().format("%Y%m%d-%H%M%S");
+        self.log_dir.join(format!("{}-{timestamp}.jsonl", self.queue.label()))
     }
 
     fn write_record(&mut self, dir: &'static str, data: &Value) -> Result<()> {
