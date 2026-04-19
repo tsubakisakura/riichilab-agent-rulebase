@@ -38,6 +38,9 @@ cargo run validate
 
 # ランク戦へ接続
 cargo run ranked
+
+# ランク戦を10試合連続で回す
+cargo run ranked -- --games 10
 ~~~
 
 必要ならログ出力先を上書きできます。

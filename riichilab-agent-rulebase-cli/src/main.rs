@@ -44,6 +44,8 @@ struct ConnectCommand {
     url: Option<String>,
     #[argh(option, description = "directory for per-game jsonl logs")]
     log_dir: Option<PathBuf>,
+    #[argh(option, default = "1", description = "number of sessions to run")]
+    games: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -63,9 +65,7 @@ impl QueueKind {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    default_provider()
-        .install_default()
-        .map_err(|_| anyhow!("failed to install rustls crypto provider"))?;
+    default_provider().install_default().map_err(|_| anyhow!("failed to install rustls crypto provider"))?;
     let _ = dotenv();
     let args: Args = argh::from_env();
 
@@ -79,17 +79,19 @@ async fn run(command: ConnectCommand, queue: QueueKind) -> Result<()> {
     let token = load_token(command.token)?;
     let url = command.url.unwrap_or_else(|| queue.default_url().to_owned());
     let mut logger = GameLogger::new(command.log_dir.unwrap_or_else(|| PathBuf::from("logs")));
+    let games = command.games;
 
-    let mut request = url
-        .clone()
-        .into_client_request()
-        .context("failed to build websocket request")?;
-    request.headers_mut().insert(
-        "Authorization",
-        format!("Bearer {token}")
-            .parse()
-            .context("failed to encode authorization header")?,
-    );
+    for game_index in 0..games {
+        let outcome = run_single_game(&token, &url, queue, &mut logger).await?;
+        eprintln!("completed session {}/{} ({})", game_index + 1, games, outcome.label());
+    }
+
+    Ok(())
+}
+
+async fn run_single_game(token: &str, url: &str, queue: QueueKind, logger: &mut GameLogger) -> Result<SessionOutcome> {
+    let mut request = url.to_owned().into_client_request().context("failed to build websocket request")?;
+    request.headers_mut().insert("Authorization", format!("Bearer {token}").parse().context("failed to encode authorization header")?);
 
     let (mut socket, _) = connect_async(request).await.with_context(|| format!("failed to connect to {url}"))?;
 
@@ -107,11 +109,15 @@ async fn run(command: ConnectCommand, queue: QueueKind) -> Result<()> {
                     socket.send(Message::Text(outbound.into())).await.context("failed to send action")?;
                 }
 
-                if message.is_validation_result() {
-                    break;
+                if let Some(outcome) = session_outcome(queue, &message) {
+                    logger.close()?;
+                    return Ok(outcome);
                 }
             }
-            Message::Close(_) => break,
+            Message::Close(_) => {
+                logger.close()?;
+                bail!("websocket closed before session completion");
+            }
             Message::Binary(_) => {}
             Message::Ping(payload) => {
                 socket.send(Message::Pong(payload)).await.context("failed to respond to ping")?;
@@ -121,7 +127,16 @@ async fn run(command: ConnectCommand, queue: QueueKind) -> Result<()> {
         }
     }
 
-    Ok(())
+    logger.close()?;
+    bail!("websocket stream ended before session completion")
+}
+
+fn session_outcome(queue: QueueKind, message: &IncomingMessage) -> Option<SessionOutcome> {
+    match queue {
+        QueueKind::Validate if message.is_validation_result() => Some(SessionOutcome::ValidationResult),
+        QueueKind::Ranked if message.is_end_game() => Some(SessionOutcome::EndGame),
+        _ => None,
+    }
 }
 
 fn handle_message(message: &IncomingMessage) -> Result<Option<String>> {
@@ -160,6 +175,20 @@ struct GameLogger {
     log_dir: PathBuf,
     current: Option<BufWriter<File>>,
     game_index: u64,
+}
+
+enum SessionOutcome {
+    ValidationResult,
+    EndGame,
+}
+
+impl SessionOutcome {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::ValidationResult => "validation_result",
+            Self::EndGame => "end_game",
+        }
+    }
 }
 
 impl GameLogger {
