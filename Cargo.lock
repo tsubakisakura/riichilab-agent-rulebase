@@ -623,6 +623,7 @@ dependencies = [
  "argh",
  "futures-util",
  "http",
+ "rand 0.9.4",
  "riichienv-core",
  "riichilab-agent-protocol",
  "serde",

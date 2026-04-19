@@ -1,8 +1,9 @@
+mod rules;
+
 use anyhow::{Context, Result, anyhow, bail};
 use argh::FromArgs;
 use futures_util::{SinkExt, StreamExt};
 use http::Request;
-use riichienv_core::action::{Action, ActionType};
 use riichienv_core::observation::Observation;
 use riichilab_agent_protocol::IncomingMessage;
 use serde::Serialize;
@@ -113,7 +114,8 @@ fn handle_message(message: &IncomingMessage) -> Result<Option<String>> {
         return Ok(None);
     };
 
-    let action = decode_observation(request.observation)?.select_action().ok_or_else(|| anyhow!("request_action contained no legal actions"))?;
+    let observation = decode_observation(request.observation)?;
+    let action = rules::choose_action(&observation).ok_or_else(|| anyhow!("request_action contained no legal actions"))?;
 
     let action_mjai = action.to_mjai();
     if !request.possible_actions.iter().any(|candidate| candidate == &serde_json::from_str::<Value>(&action_mjai).expect("action mjai must be valid json")) {
@@ -123,55 +125,8 @@ fn handle_message(message: &IncomingMessage) -> Result<Option<String>> {
     Ok(Some(action_mjai))
 }
 
-fn decode_observation(encoded: &str) -> Result<DecodedObservation> {
-    Observation::deserialize_from_base64(encoded).map(DecodedObservation).context("failed to decode 4-player observation")
-}
-
-struct DecodedObservation(Observation);
-
-impl DecodedObservation {
-    fn select_action(&self) -> Option<SelectedAction> {
-        let actions = self.0.legal_actions_method();
-        select_temporary_action(actions.iter().map(SelectedActionRef))
-    }
-}
-
-#[derive(Debug, Clone)]
-struct SelectedAction(Action);
-
-impl SelectedAction {
-    fn to_mjai(&self) -> String {
-        self.0.to_mjai()
-    }
-}
-
-struct SelectedActionRef<'a>(&'a Action);
-
-impl SelectedActionRef<'_> {
-    fn to_owned(&self) -> SelectedAction {
-        SelectedAction(self.0.clone())
-    }
-
-    fn action_type(&self) -> ActionType {
-        self.0.action_type
-    }
-
-    fn is_tsumogiri_discard(&self) -> bool {
-        matches!(self.0.action_type, ActionType::Discard) && self.0.tile.is_some()
-    }
-}
-
-fn select_temporary_action<'a>(possible_actions: impl IntoIterator<Item = SelectedActionRef<'a>>) -> Option<SelectedAction> {
-    let actions: Vec<_> = possible_actions.into_iter().collect();
-    find_action(&actions, |action| matches!(action.action_type(), ActionType::Tsumo | ActionType::Ron))
-        .or_else(|| find_action(&actions, |action| matches!(action.action_type(), ActionType::Riichi)))
-        .or_else(|| find_action(&actions, SelectedActionRef::is_tsumogiri_discard))
-        .or_else(|| find_action(&actions, |action| matches!(action.action_type(), ActionType::Pass)))
-        .or_else(|| actions.first().map(SelectedActionRef::to_owned))
-}
-
-fn find_action<'a>(possible_actions: &'a [SelectedActionRef<'a>], predicate: impl Fn(&SelectedActionRef<'a>) -> bool) -> Option<SelectedAction> {
-    possible_actions.iter().find(|action| predicate(action)).map(SelectedActionRef::to_owned)
+fn decode_observation(encoded: &str) -> Result<Observation> {
+    Observation::deserialize_from_base64(encoded).context("failed to decode 4-player observation")
 }
 
 fn load_token(token_arg: Option<String>) -> Result<String> {
