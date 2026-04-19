@@ -1,6 +1,8 @@
-[package]
-name = "riichilab-agent-rulebase"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+resolver = "2"
+members = [
+    "riichilab-agent-protocol",
+    "riichilab-agent-rulebase-cli"]
 
-[dependencies]
+[workspace.metadata.docs.rs]
+rustdoc-args = ["--no-deps"]
