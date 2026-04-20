@@ -226,6 +226,14 @@ fn handle_message(message: &IncomingMessage) -> Result<Option<String>> {
     let observation = decode_observation(request.observation)?;
     let action = rules::choose_action(&observation).ok_or_else(|| anyhow!("request_action contained no legal actions"))?;
 
+    // 実装メモ
+    //
+    // RiichiLabのrequest_actionフレームは、直下にpossible_actions、observationの中にlegal_actions(Action型)があります。
+    // この２つはデータ表現が異なり、二重に渡されます。possible_actionsはmjai寄りの表現、legal_actionsは内部表現に近いです。
+    //
+    // 本リポジトリの思考ルーチンはobservationを元に作られ、これをto_mjaiでJSON文字列に変換し、念のためpossible_actionsに該当するか調べています。
+    // ただ厳密にはaction_mjaiがpossible_actionsに完全一致しなくてもサーバーが受け入れてくれるならそれで問題がないはずで、比較は過剰かもしれません。
+    // (場合によってはサーバー的に合法なのにエラー扱いになる可能性もあるかもしれません。)
     let action_mjai = action.to_mjai();
     if !request.possible_actions.iter().any(|candidate| candidate == &serde_json::from_str::<Value>(&action_mjai).expect("action mjai must be valid json")) {
         bail!("selected action not present in request_action.possible_actions: {action_mjai}");
