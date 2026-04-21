@@ -735,15 +735,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "riichilab-agent-protocol"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "riichilab-agent-rulebase-cli"
+name = "riichilab-agent-rulebase"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -754,7 +746,6 @@ dependencies = [
  "http",
  "rand 0.9.4",
  "riichienv-core",
- "riichilab-agent-protocol",
  "rustls",
  "serde",
  "serde_json",

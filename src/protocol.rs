@@ -12,10 +12,6 @@ pub struct IncomingMessage {
 }
 
 impl IncomingMessage {
-    pub fn kind(&self) -> &str {
-        &self.kind
-    }
-
     pub fn is_start_game(&self) -> bool {
         self.kind == "start_game"
     }
@@ -38,29 +34,12 @@ impl IncomingMessage {
 
         Ok(Some(RequestAction { possible_actions, observation }))
     }
-
-    pub fn validation_result(&self) -> Result<Option<ValidationResult<'_>>, ProtocolError> {
-        if self.kind != "validation_result" {
-            return Ok(None);
-        }
-
-        let passed = self.payload.get("passed").ok_or(ProtocolError::MissingField("passed"))?.as_bool().ok_or(ProtocolError::InvalidFieldType("passed"))?;
-        let reason = self.payload.get("reason").and_then(Value::as_str);
-
-        Ok(Some(ValidationResult { passed, reason }))
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RequestAction<'a> {
     pub possible_actions: &'a [Value],
     pub observation: &'a str,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ValidationResult<'a> {
-    pub passed: bool,
-    pub reason: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,22 +80,6 @@ mod tests {
         let request = message.request_action().unwrap().unwrap();
         assert_eq!(request.observation, "ZmFrZQ==");
         assert_eq!(request.possible_actions.len(), 2);
-    }
-
-    #[test]
-    fn parses_validation_result() {
-        let message: IncomingMessage = serde_json::from_str(
-            r#"{
-                "type": "validation_result",
-                "passed": false,
-                "reason": "disconnected"
-            }"#,
-        )
-        .unwrap();
-
-        let result = message.validation_result().unwrap().unwrap();
-        assert!(!result.passed);
-        assert_eq!(result.reason, Some("disconnected"));
     }
 
     #[test]

@@ -13,8 +13,9 @@
 
 # リポジトリ構成
 
-* riichilab-agent-rulebase-cli (CLIで起動するagent)
-* riichilab-agent-protocol (通信プロトコル)
+* `src/main.rs` (CLIで起動するagent)
+* `src/rules.rs` (ルールベースの意思決定)
+* `src/protocol.rs` (RiichiLab transportの薄いパーサ)
 
 # セットアップ
 

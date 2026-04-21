@@ -1,3 +1,4 @@
+mod protocol;
 mod rules;
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -6,7 +7,6 @@ use chrono::Utc;
 use dotenvy::dotenv;
 use futures_util::{SinkExt, StreamExt};
 use riichienv_core::observation::Observation;
-use riichilab_agent_protocol::IncomingMessage;
 use rustls::crypto::ring::default_provider;
 use serde::Serialize;
 use serde_json::Value;
@@ -18,6 +18,8 @@ use tokio::time::{MissedTickBehavior, interval};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::protocol::Message;
+
+use crate::protocol::IncomingMessage;
 
 const VALIDATE_ENDPOINT: &str = "wss://game.riichi.dev/ws/validate";
 const RANKED_ENDPOINT: &str = "wss://game.riichi.dev/ws/ranked";
