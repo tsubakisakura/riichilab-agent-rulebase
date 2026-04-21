@@ -14,7 +14,7 @@
 # リポジトリ構成
 
 * riichilab-agent-rulebase-cli (CLIで起動するagent)
-* riichilab-agent-protocol (DTO)
+* riichilab-agent-protocol (通信プロトコル)
 
 # セットアップ
 
